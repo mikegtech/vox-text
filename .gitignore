@@ -11,6 +11,7 @@ node_modules/
 
 # Environment variables
 .env
+.env.*
 
 # Editor directories and files
 .idea
@@ -23,3 +24,35 @@ node_modules/
 
 # OS specific
 .DS_Store
+.DS_Store?
+._*
+Thumbs.db
+
+# Infrastructure specific
+infrastructure/cdk.out/
+infrastructure/.cdk.staging/
+infrastructure/outputs-*.json
+infrastructure/.cdk-bootstrapped*
+infrastructure/cdk.context.json
+
+# AWS credentials (should never be committed)
+.aws/
+aws-credentials*
+*.pem
+*.key
+
+# Build artifacts
+dist/
+build/
+out/
+
+# Temporary files
+*.tmp
+*.temp
+.tmp/
+.temp/
+
+# Backup files
+*.bak
+*.backup
+*.old
