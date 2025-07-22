@@ -11,6 +11,7 @@ import * as subscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
 import { NamingConvention } from './naming-convention';
 import { TaggingStrategy, SERVICES } from './tagging-strategy';
 import { EnvironmentConfig, getRemovalPolicy } from '../config/environments';
+import { ApiGatewayConstruct } from './api-gateway-construct';
 
 export interface InfrastructureStackProps extends cdk.StackProps {
   environment: string;
@@ -195,7 +196,9 @@ export class InfrastructureStack extends cdk.Stack {
         'CONVERSATIONS_TABLE': conversationsTable.tableName,
         'ANALYTICS_TABLE': analyticsTable.tableName,
         'ENVIRONMENT': this.config.environment
-      }
+      },
+      // Let Lambda create its own log group to avoid conflicts
+      logRetention: this.getLogRetention()
     });
 
     // Apply compute service tags
@@ -220,7 +223,18 @@ export class InfrastructureStack extends cdk.Stack {
     inboundSmsTopic.addSubscription(new subscriptions.LambdaSubscription(smsHandlerFunction));
 
     // ===========================================
-    // CLOUDWATCH DASHBOARD (Phase 6 - Monitoring)
+    // API GATEWAY FOR TELNYX WEBHOOKS (Phase 6)
+    // ===========================================
+
+    const apiGateway = new ApiGatewayConstruct(this, 'TelnyxWebhookApi', {
+      naming: this.naming,
+      tagging: this.tagging,
+      smsHandlerFunction: smsHandlerFunction,
+      environment: this.config.environment
+    });
+
+    // ===========================================
+    // CLOUDWATCH DASHBOARD (Phase 7 - Monitoring)
     // ===========================================
 
     const dashboard = new cloudwatch.Dashboard(this, 'SmsBotDashboard', {
@@ -294,6 +308,26 @@ export class InfrastructureStack extends cdk.Stack {
       description: 'URL to the CloudWatch dashboard'
     });
 
+    new cdk.CfnOutput(this, 'ApiGatewayUrl', {
+      value: apiGateway.api.url,
+      description: 'API Gateway URL for Telnyx webhooks'
+    });
+
+    new cdk.CfnOutput(this, 'WebhookEndpoint', {
+      value: `${apiGateway.api.url}webhook/sms`,
+      description: 'Telnyx SMS webhook endpoint URL'
+    });
+
+    new cdk.CfnOutput(this, 'HealthCheckEndpoint', {
+      value: `${apiGateway.api.url}health`,
+      description: 'API health check endpoint'
+    });
+
+    new cdk.CfnOutput(this, 'AuthorizerFunctionArn', {
+      value: apiGateway.authorizerFunction.functionArn,
+      description: 'ARN of the Telnyx authorizer Lambda function'
+    });
+
     // Output naming examples for verification
     new cdk.CfnOutput(this, 'NamingExamples', {
       value: JSON.stringify({
@@ -345,8 +379,8 @@ from datetime import datetime
 
 def lambda_handler(event, context):
     """
-    Main SMS bot handler function
-    Processes inbound SMS messages and generates responses
+    SMS bot handler function
+    Processes inbound SMS from both SNS and API Gateway (Telnyx)
     """
     print(f"Received event: {json.dumps(event)}")
     
@@ -357,62 +391,19 @@ def lambda_handler(event, context):
     analytics_table = dynamodb.Table(os.environ['ANALYTICS_TABLE'])
     
     try:
-        # Parse SNS message
+        # Determine event source
         if 'Records' in event:
-            for record in event['Records']:
-                if record['EventSource'] == 'aws:sns':
-                    message = json.loads(record['Sns']['Message'])
-                    
-                    # Extract phone number and message content
-                    phone_number = message.get('originationNumber', 'unknown')
-                    message_body = message.get('messageBody', '')
-                    
-                    # Store conversation in DynamoDB
-                    timestamp = datetime.utcnow().isoformat()
-                    conversations_table.put_item(
-                        Item={
-                            'phone_number': phone_number,
-                            'created_at': timestamp,
-                            'updated_at': timestamp,
-                            'last_message': message_body,
-                            'conversation_state': 'active',
-                            'message_count': 1,
-                            'environment': os.environ.get('ENVIRONMENT', 'unknown')
-                        }
-                    )
-                    
-                    # Store analytics
-                    analytics_table.put_item(
-                        Item={
-                            'date': timestamp[:10],  # YYYY-MM-DD
-                            'metric_type': 'inbound_message',
-                            'timestamp': timestamp,
-                            'phone_number': phone_number,
-                            'message_length': len(message_body)
-                        }
-                    )
-                    
-                    # Generate bot response (placeholder logic)
-                    bot_response = f"Hello! I received your message: {message_body[:50]}..."
-                    
-                    # Send SMS response
-                    sns.publish(
-                        PhoneNumber=phone_number,
-                        Message=bot_response,
-                        MessageAttributes={
-                            'AWS.SNS.SMS.SMSType': {
-                                'DataType': 'String',
-                                'StringValue': 'Transactional'
-                            }
-                        }
-                    )
-                    
-                    print(f"Processed message from {phone_number}")
-        
-        return {
-            'statusCode': 200,
-            'body': json.dumps('Message processed successfully')
-        }
+            # SNS event
+            return handle_sns_event(event, sns, conversations_table, analytics_table)
+        elif 'httpMethod' in event:
+            # API Gateway event (Telnyx webhook)
+            return handle_api_gateway_event(event, sns, conversations_table, analytics_table)
+        else:
+            print("Unknown event source")
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': 'Unknown event source'})
+            }
         
     except Exception as e:
         print(f"Error processing message: {str(e)}")
@@ -424,7 +415,8 @@ def lambda_handler(event, context):
                     'date': datetime.utcnow().isoformat()[:10],
                     'metric_type': 'error',
                     'timestamp': datetime.utcnow().isoformat(),
-                    'error_message': str(e)
+                    'error_message': str(e),
+                    'event_source': 'sns' if 'Records' in event else 'api_gateway'
                 }
             )
         except:
@@ -432,8 +424,117 @@ def lambda_handler(event, context):
             
         return {
             'statusCode': 500,
-            'body': json.dumps(f'Error: {str(e)}')
+            'body': json.dumps({'error': str(e)})
         }
+
+def handle_sns_event(event, sns, conversations_table, analytics_table):
+    """Handle SNS events (original functionality)"""
+    for record in event['Records']:
+        if record['EventSource'] == 'aws:sns':
+            message = json.loads(record['Sns']['Message'])
+            
+            # Extract phone number and message content
+            phone_number = message.get('originationNumber', 'unknown')
+            message_body = message.get('messageBody', '')
+            
+            process_sms_message(phone_number, message_body, sns, conversations_table, analytics_table, 'sns')
+    
+    return {
+        'statusCode': 200,
+        'body': json.dumps('SNS message processed successfully')
+    }
+
+def handle_api_gateway_event(event, sns, conversations_table, analytics_table):
+    """Handle API Gateway events (Telnyx webhooks)"""
+    try:
+        # Parse Telnyx webhook payload
+        body = json.loads(event.get('body', '{}'))
+        
+        # Extract Telnyx event data
+        event_type = body.get('data', {}).get('event_type', '')
+        
+        if event_type == 'message.received':
+            # Inbound SMS from Telnyx
+            payload = body.get('data', {}).get('payload', {})
+            
+            phone_number = payload.get('from', {}).get('phone_number', 'unknown')
+            message_body = payload.get('text', '')
+            
+            process_sms_message(phone_number, message_body, sns, conversations_table, analytics_table, 'telnyx')
+            
+            return {
+                'statusCode': 200,
+                'headers': {
+                    'Content-Type': 'application/json'
+                },
+                'body': json.dumps({'message': 'Telnyx webhook processed successfully'})
+            }
+        else:
+            print(f"Unhandled Telnyx event type: {event_type}")
+            return {
+                'statusCode': 200,
+                'headers': {
+                    'Content-Type': 'application/json'
+                },
+                'body': json.dumps({'message': 'Event acknowledged but not processed'})
+            }
+            
+    except json.JSONDecodeError as e:
+        print(f"Invalid JSON in request body: {str(e)}")
+        return {
+            'statusCode': 400,
+            'headers': {
+                'Content-Type': 'application/json'
+            },
+            'body': json.dumps({'error': 'Invalid JSON payload'})
+        }
+
+def process_sms_message(phone_number, message_body, sns, conversations_table, analytics_table, source):
+    """Process SMS message from any source"""
+    timestamp = datetime.utcnow().isoformat()
+    
+    # Store conversation in DynamoDB
+    conversations_table.put_item(
+        Item={
+            'phone_number': phone_number,
+            'created_at': timestamp,
+            'updated_at': timestamp,
+            'last_message': message_body,
+            'conversation_state': 'active',
+            'message_count': 1,
+            'environment': os.environ.get('ENVIRONMENT', 'unknown'),
+            'source': source
+        }
+    )
+    
+    # Store analytics
+    analytics_table.put_item(
+        Item={
+            'date': timestamp[:10],  # YYYY-MM-DD
+            'metric_type': 'inbound_message',
+            'timestamp': timestamp,
+            'phone_number': phone_number,
+            'message_length': len(message_body),
+            'source': source
+        }
+    )
+    
+    # Generate bot response (placeholder logic)
+    bot_response = f"Hello! I received your message: {message_body[:50]}..."
+    
+    # Send SMS response via SNS (works for both sources)
+    sns.publish(
+        PhoneNumber=phone_number,
+        Message=bot_response,
+        MessageAttributes={
+            'AWS.SNS.SMS.SMSType': {
+                'DataType': 'String',
+                'StringValue': 'Transactional'
+            }
+        }
+    )
+    
+    print(f"Processed message from {phone_number} via {source}")
     `;
   }
 }
