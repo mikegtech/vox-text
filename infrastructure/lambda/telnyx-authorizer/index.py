@@ -1,6 +1,6 @@
 """
-Telnyx Webhook Ed25519 Signature Validation Authorizer
-Production-ready implementation using AWS Secrets Manager
+Telnyx Webhook EdDSA Signature Validation Authorizer
+Corrected implementation based on official Telnyx documentation
 """
 
 import json
@@ -10,7 +10,7 @@ import time
 import boto3
 from datetime import datetime, timezone
 
-# For production, you would install cryptography library in a Lambda Layer
+# For production EdDSA validation
 try:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
     from cryptography.exceptions import InvalidSignature
@@ -29,8 +29,8 @@ CACHE_TTL = 300  # 5 minutes
 
 def lambda_handler(event, context):
     """
-    Telnyx webhook Ed25519 signature validation authorizer
-    Retrieves public key from AWS Secrets Manager
+    Telnyx webhook EdDSA signature validation authorizer
+    Based on official Telnyx documentation and SDK implementation
     """
     print(f"Authorizer event: {json.dumps(event, default=str)}")
     
@@ -61,15 +61,12 @@ def lambda_handler(event, context):
         if body is None:
             body = ''
         
-        # Create signed payload: timestamp|body (Telnyx format)
-        signed_payload = f"{timestamp}|{body}"
-        
-        # Verify Ed25519 signature
-        if verify_ed25519_signature(signed_payload, signature, public_key_b64):
-            print("SUCCESS: Signature validation passed")
+        # Verify EdDSA signature using Telnyx method
+        if verify_telnyx_signature(body, signature, timestamp, public_key_b64):
+            print("SUCCESS: Telnyx signature validation passed")
             return generate_policy('user', 'Allow', event['methodArn'])
         else:
-            print("ERROR: Signature validation failed")
+            print("ERROR: Telnyx signature validation failed")
             return generate_policy('user', 'Deny', event['methodArn'])
         
     except Exception as e:
@@ -118,7 +115,7 @@ def validate_timestamp(timestamp_str):
         webhook_timestamp = int(timestamp_str)
         current_timestamp = int(time.time())
         
-        # Allow 5 minute window (300 seconds)
+        # Allow 5 minute window (300 seconds) - Telnyx standard
         tolerance = 300
         age = current_timestamp - webhook_timestamp
         
@@ -136,45 +133,84 @@ def validate_timestamp(timestamp_str):
         print(f"ERROR: Invalid timestamp format: {timestamp_str}")
         return False
 
-def verify_ed25519_signature(payload, signature_b64, public_key_b64):
+def verify_telnyx_signature(payload, signature_b64, timestamp, public_key_b64):
     """
-    Verify Ed25519 signature using cryptography library
-    Falls back to basic validation if library not available
+    Verify Telnyx EdDSA signature following official Telnyx method
+    Based on: https://github.com/team-telnyx/telnyx-python/blob/master/telnyx/webhook.py
     """
     try:
+        print(f"Verifying signature for payload length: {len(payload)}")
+        print(f"Timestamp: {timestamp}")
+        print(f"Signature (first 20 chars): {signature_b64[:20]}...")
+        
         if CRYPTO_AVAILABLE:
-            return verify_with_cryptography(payload, signature_b64, public_key_b64)
+            return verify_with_cryptography_eddsa(payload, signature_b64, timestamp, public_key_b64)
         else:
-            return verify_basic_format(signature_b64, public_key_b64)
+            return verify_basic_format_eddsa(signature_b64, public_key_b64)
             
     except Exception as e:
         print(f"ERROR: Signature verification failed: {str(e)}")
         return False
 
-def verify_with_cryptography(payload, signature_b64, public_key_b64):
-    """Production Ed25519 verification using cryptography library"""
+def verify_with_cryptography_eddsa(payload, signature_b64, timestamp, public_key_b64):
+    """
+    Production EdDSA verification using cryptography library
+    Following Telnyx's exact implementation
+    """
     try:
+        # Convert timestamp to bytes if it's a string
+        if isinstance(timestamp, str):
+            timestamp_bytes = timestamp.encode('utf-8')
+        else:
+            timestamp_bytes = str(timestamp).encode('utf-8')
+        
+        # Convert payload to bytes if it's a string
+        if isinstance(payload, str):
+            payload_bytes = payload.encode('utf-8')
+        else:
+            payload_bytes = payload
+        
+        # Create signed payload: timestamp|payload (Telnyx format)
+        signed_payload = timestamp_bytes + b"|" + payload_bytes
+        
+        print(f"Signed payload length: {len(signed_payload)}")
+        print(f"Signed payload (first 100 chars): {signed_payload[:100]}")
+        
         # Decode base64 signature and public key
-        signature_bytes = base64.b64decode(signature_b64)
-        public_key_bytes = base64.b64decode(public_key_b64)
+        try:
+            signature_bytes = base64.b64decode(signature_b64)
+            public_key_bytes = base64.b64decode(public_key_b64)
+        except Exception as e:
+            print(f"ERROR: Failed to decode base64 data: {str(e)}")
+            return False
+        
+        print(f"Signature bytes length: {len(signature_bytes)}")
+        print(f"Public key bytes length: {len(public_key_bytes)}")
         
         # Create Ed25519 public key object
-        public_key = Ed25519PublicKey.from_public_bytes(public_key_bytes)
+        try:
+            public_key = Ed25519PublicKey.from_public_bytes(public_key_bytes)
+        except Exception as e:
+            print(f"ERROR: Failed to create Ed25519 public key: {str(e)}")
+            return False
         
-        # Verify signature
-        public_key.verify(signature_bytes, payload.encode('utf-8'))
+        # Verify signature against signed payload
+        try:
+            public_key.verify(signature_bytes, signed_payload)
+            print("SUCCESS: EdDSA signature verified with cryptography library")
+            return True
+        except InvalidSignature:
+            print("ERROR: Invalid EdDSA signature - cryptographic verification failed")
+            return False
+        except Exception as e:
+            print(f"ERROR: EdDSA verification error: {str(e)}")
+            return False
         
-        print("SUCCESS: Ed25519 signature verified with cryptography library")
-        return True
-        
-    except InvalidSignature:
-        print("ERROR: Invalid Ed25519 signature")
-        return False
     except Exception as e:
-        print(f"ERROR: Ed25519 verification error: {str(e)}")
+        print(f"ERROR: EdDSA verification exception: {str(e)}")
         return False
 
-def verify_basic_format(signature_b64, public_key_b64):
+def verify_basic_format_eddsa(signature_b64, public_key_b64):
     """
     Basic format validation when cryptography library is not available
     This is NOT secure for production - install cryptography library
@@ -184,17 +220,17 @@ def verify_basic_format(signature_b64, public_key_b64):
         signature_bytes = base64.b64decode(signature_b64)
         public_key_bytes = base64.b64decode(public_key_b64)
         
-        # Basic format checks
-        if len(signature_bytes) != 64:  # Ed25519 signatures are 64 bytes
+        # EdDSA signatures are 64 bytes, public keys are 32 bytes
+        if len(signature_bytes) != 64:
             print(f"ERROR: Invalid signature length: {len(signature_bytes)} (expected 64)")
             return False
             
-        if len(public_key_bytes) != 32:  # Ed25519 public keys are 32 bytes
+        if len(public_key_bytes) != 32:
             print(f"ERROR: Invalid public key length: {len(public_key_bytes)} (expected 32)")
             return False
         
         print("WARNING: Using basic format validation - NOT SECURE for production")
-        print("Install cryptography library for proper Ed25519 verification")
+        print("Install cryptography library for proper EdDSA verification")
         return True
         
     except Exception as e:
@@ -218,7 +254,7 @@ def generate_policy(principal_id, effect, resource):
         'context': {
             'environment': os.environ.get('ENVIRONMENT', 'unknown'),
             'timestamp': str(int(time.time())),
-            'validation_method': 'ed25519_cryptography' if CRYPTO_AVAILABLE else 'ed25519_basic',
+            'validation_method': 'eddsa_cryptography' if CRYPTO_AVAILABLE else 'eddsa_basic',
             'crypto_available': str(CRYPTO_AVAILABLE),
             'secret_source': 'secrets_manager'
         }
