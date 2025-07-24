@@ -215,6 +215,24 @@ export class TaggingStrategy {
     return { ...baseTags, ...additionalTags };
   }
 
+  /**
+   * Generate tags for network services (API Gateway, Custom Domains)
+   */
+  networkServiceTags(component: string, additionalTags: Partial<AllTags> = {}): AllTags {
+    const baseTags: AllTags = {
+      ...this.baseTags,
+      Service: SERVICES.NETWORK,
+      OffHoursShutdown: 'disabled', // Network services must always be on
+      Component: component,
+      Application: 'sms-bot',
+      DataClassification: 'public',
+      BackupRequired: 'false',
+      ...this.getEnvironmentSpecificTags()
+    };
+
+    return { ...baseTags, ...additionalTags };
+  }
+
   // ===========================================
   // ENVIRONMENT-SPECIFIC HELPERS
   // ===========================================
@@ -287,6 +305,9 @@ export class TaggingStrategy {
         break;
       case SERVICES.SECURITY:
         tags = this.securityServiceTags(component, additionalTags);
+        break;
+      case SERVICES.NETWORK:
+        tags = this.networkServiceTags(component, additionalTags);
         break;
       default:
         throw new Error(`Unknown service type: ${service}`);

@@ -230,7 +230,10 @@ export class InfrastructureStack extends cdk.Stack {
       naming: this.naming,
       tagging: this.tagging,
       smsHandlerFunction: smsHandlerFunction,
-      environment: this.config.environment
+      environment: this.config.environment,
+      customDomain: this.getCustomDomainConfig(),
+      conversationsTable: conversationsTable.tableName,
+      analyticsTable: analyticsTable.tableName
     });
 
     // ===========================================
@@ -314,14 +317,40 @@ export class InfrastructureStack extends cdk.Stack {
     });
 
     new cdk.CfnOutput(this, 'WebhookEndpoint', {
-      value: `${apiGateway.api.url}webhook/sms`,
-      description: 'Telnyx SMS webhook endpoint URL'
+      value: apiGateway.webhookUrl,
+      description: 'Telnyx SMS webhook endpoint URL (custom domain or API Gateway)'
+    });
+
+    new cdk.CfnOutput(this, 'FallbackEndpoint', {
+      value: apiGateway.fallbackUrl,
+      description: 'Telnyx fallback/dead letter queue webhook endpoint URL'
     });
 
     new cdk.CfnOutput(this, 'HealthCheckEndpoint', {
-      value: `${apiGateway.api.url}health`,
+      value: apiGateway.customDomain 
+        ? `https://${apiGateway.customDomain.domainName}/health`
+        : `${apiGateway.api.url}health`,
       description: 'API health check endpoint'
     });
+
+    new cdk.CfnOutput(this, 'FallbackHealthEndpoint', {
+      value: apiGateway.customDomain 
+        ? `https://${apiGateway.customDomain.domainName}/dev/webhooks/telnyx/fallback`
+        : `${apiGateway.api.url}dev/webhooks/telnyx/fallback`,
+      description: 'Fallback endpoint health check (GET)'
+    });
+
+    if (apiGateway.customDomain) {
+      new cdk.CfnOutput(this, 'CustomDomainName', {
+        value: apiGateway.customDomain.domainName,
+        description: 'Custom domain name for API Gateway'
+      });
+
+      new cdk.CfnOutput(this, 'DomainNameTarget', {
+        value: apiGateway.customDomain.domainNameAliasDomainName,
+        description: 'Target domain name for DNS CNAME record'
+      });
+    }
 
     new cdk.CfnOutput(this, 'AuthorizerFunctionArn', {
       value: apiGateway.authorizerFunction.functionArn,
@@ -368,6 +397,21 @@ export class InfrastructureStack extends cdk.Stack {
       return cdk.RemovalPolicy.RETAIN; // Protect production resources
     }
     return cdk.RemovalPolicy.DESTROY; // Allow cleanup for dev/staging
+  }
+
+  private getCustomDomainConfig() {
+    // Get custom domain configuration from CDK context
+    const customDomainName = this.node.tryGetContext('customDomainName');
+    const certificateArn = this.node.tryGetContext('certificateArn');
+    
+    if (customDomainName && certificateArn) {
+      return {
+        domainName: customDomainName,
+        certificateArn: certificateArn
+      };
+    }
+    
+    return undefined;
   }
 
   private getLambdaCode(): string {

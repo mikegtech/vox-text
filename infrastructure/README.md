@@ -298,11 +298,21 @@ aws configure
 export AWS_PROFILE=your-profile
 ```
 
-**3. Resource Name Conflicts**
+**3. API Gateway CloudWatch Logging Error**
+```
+CloudWatch Logs role ARN must be set in account settings to enable logging
+```
+**Solution:** Run the one-time account setup:
+```bash
+./scripts/setup-apigateway-cloudwatch.sh boss
+```
+This creates and configures the required IAM role for API Gateway CloudWatch logging.
+
+**4. Resource Name Conflicts**
 - Check existing resources with same names
 - Verify environment context is set correctly
 
-**4. Permission Denied**
+**5. Permission Denied**
 - Ensure AWS credentials have necessary permissions
 - Check IAM policies for CDK deployment
 

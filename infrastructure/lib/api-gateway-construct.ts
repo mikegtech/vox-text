@@ -4,6 +4,7 @@ import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 
 import { NamingConvention } from './naming-convention';
 import { TaggingStrategy, SERVICES } from './tagging-strategy';
@@ -14,11 +15,21 @@ export interface ApiGatewayConstructProps {
   tagging: TaggingStrategy;
   smsHandlerFunction: lambda.Function;
   environment: string;
+  customDomain?: {
+    domainName: string;
+    certificateArn: string;
+  };
+  conversationsTable: string;
+  analyticsTable: string;
 }
 
 export class ApiGatewayConstruct extends Construct {
   public readonly api: apigateway.RestApi;
   public readonly authorizerFunction: lambda.Function;
+  public readonly fallbackFunction: lambda.Function;
+  public readonly customDomain?: apigateway.DomainName;
+  public readonly webhookUrl: string;
+  public readonly fallbackUrl: string;
   private readonly environment: string;
 
   constructor(scope: Construct, id: string, props: ApiGatewayConstructProps) {
@@ -82,6 +93,62 @@ export class ApiGatewayConstruct extends Construct {
     });
 
     // ===========================================
+    // FALLBACK LAMBDA FUNCTION
+    // ===========================================
+
+    // IAM role for the fallback Lambda
+    const fallbackRole = new iam.Role(this, 'FallbackRole', {
+      roleName: props.naming.iamRole(SERVICES.MESSAGING, 'fallback-handler'),
+      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')
+      ]
+    });
+
+    // Grant DynamoDB permissions to fallback role
+    fallbackRole.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: [
+        'dynamodb:PutItem',
+        'dynamodb:GetItem',
+        'dynamodb:UpdateItem',
+        'dynamodb:Query'
+      ],
+      resources: [
+        `arn:aws:dynamodb:*:*:table/${props.conversationsTable}`,
+        `arn:aws:dynamodb:*:*:table/${props.analyticsTable}`
+      ]
+    }));
+
+    // Apply messaging service tags to fallback role
+    props.tagging.applyTags(fallbackRole, SERVICES.MESSAGING, 'fallback-handler-role');
+
+    // Fallback Lambda function
+    this.fallbackFunction = new lambda.Function(this, 'TelnyxFallback', {
+      functionName: props.naming.lambdaFunction(SERVICES.MESSAGING, 'telnyx-fallback'),
+      runtime: lambda.Runtime.PYTHON_3_9,
+      handler: 'index.lambda_handler',
+      code: lambda.Code.fromAsset('lambda/telnyx-fallback'),
+      role: fallbackRole,
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 256,
+      environment: {
+        'CONVERSATIONS_TABLE': props.conversationsTable,
+        'ANALYTICS_TABLE': props.analyticsTable,
+        'ENVIRONMENT': props.environment
+      },
+      // Let Lambda create its own log group to avoid conflicts
+      logRetention: logs.RetentionDays.ONE_MONTH
+    });
+
+    // Apply messaging service tags to fallback function
+    props.tagging.applyTags(this.fallbackFunction, SERVICES.MESSAGING, 'telnyx-fallback', {
+      Runtime: 'python3.9',
+      MemorySize: '256MB',
+      Timeout: '30s'
+    });
+
+    // ===========================================
     // API GATEWAY REST API
     // ===========================================
 
@@ -101,21 +168,22 @@ export class ApiGatewayConstruct extends Construct {
       description: 'API Gateway for Telnyx SMS webhook integration',
       deployOptions: {
         stageName: props.environment,
-        accessLogDestination: new apigateway.LogGroupLogDestination(apiLogGroup),
-        accessLogFormat: apigateway.AccessLogFormat.jsonWithStandardFields({
-          caller: true,
-          httpMethod: true,
-          ip: true,
-          protocol: true,
-          requestTime: true,
-          resourcePath: true,
-          responseLength: true,
-          status: true,
-          user: true
-        }),
-        loggingLevel: apigateway.MethodLoggingLevel.INFO,
-        dataTraceEnabled: true,
-        metricsEnabled: true
+        // Temporarily disable access logging to avoid account setup requirement
+        // accessLogDestination: new apigateway.LogGroupLogDestination(apiLogGroup),
+        // accessLogFormat: apigateway.AccessLogFormat.jsonWithStandardFields({
+        //   caller: true,
+        //   httpMethod: true,
+        //   ip: true,
+        //   protocol: true,
+        //   requestTime: true,
+        //   resourcePath: true,
+        //   responseLength: true,
+        //   status: true,
+        //   user: true
+        // }),
+        loggingLevel: apigateway.MethodLoggingLevel.OFF, // Disable method logging
+        dataTraceEnabled: false, // Disable data tracing
+        metricsEnabled: true // Keep metrics enabled
       },
       policy: this.createResourcePolicy(),
       endpointConfiguration: {
@@ -144,11 +212,12 @@ export class ApiGatewayConstruct extends Construct {
     // API RESOURCES AND METHODS
     // ===========================================
 
-    // Webhook resource
-    const webhookResource = this.api.root.addResource('webhook');
-    
-    // SMS webhook endpoint
-    const smsResource = webhookResource.addResource('sms');
+    // Create nested resource structure: /dev/webhooks/telnyx/sms
+    const devResource = this.api.root.addResource('dev');
+    const webhooksResource = devResource.addResource('webhooks');
+    const telnyxResource = webhooksResource.addResource('telnyx');
+    const smsResource = telnyxResource.addResource('sms');
+    const fallbackResource = telnyxResource.addResource('fallback');
 
     // Integration with SMS handler Lambda
     const smsIntegration = new apigateway.LambdaIntegration(props.smsHandlerFunction, {
@@ -216,6 +285,83 @@ export class ApiGatewayConstruct extends Construct {
       ]
     });
 
+    // ===========================================
+    // FALLBACK ENDPOINT
+    // ===========================================
+
+    // Integration with fallback Lambda (no authorization required for fallback)
+    const fallbackIntegration = new apigateway.LambdaIntegration(this.fallbackFunction, {
+      requestTemplates: {
+        'application/json': JSON.stringify({
+          body: '$input.body',
+          headers: {
+            'content-type': '$input.params(\'content-type\')',
+            'user-agent': '$input.params(\'user-agent\')',
+            'x-forwarded-for': '$input.params(\'x-forwarded-for\')'
+          },
+          httpMethod: '$context.httpMethod',
+          sourceIp: '$context.identity.sourceIp',
+          userAgent: '$context.identity.userAgent',
+          requestContext: {
+            identity: {
+              sourceIp: '$context.identity.sourceIp'
+            }
+          }
+        })
+      },
+      passthroughBehavior: apigateway.PassthroughBehavior.NEVER,
+      integrationResponses: [
+        {
+          statusCode: '200',
+          responseTemplates: {
+            'application/json': JSON.stringify({ message: 'Fallback processed successfully' })
+          }
+        }
+      ]
+    });
+
+    // POST method for fallback endpoint (no authorization)
+    fallbackResource.addMethod('POST', fallbackIntegration, {
+      methodResponses: [
+        {
+          statusCode: '200',
+          responseModels: {
+            'application/json': apigateway.Model.EMPTY_MODEL
+          }
+        }
+      ]
+    });
+
+    // GET method for fallback health check
+    fallbackResource.addMethod('GET', new apigateway.MockIntegration({
+      integrationResponses: [
+        {
+          statusCode: '200',
+          responseTemplates: {
+            'application/json': JSON.stringify({
+              status: 'healthy',
+              service: 'telnyx-fallback-handler',
+              timestamp: new Date().toISOString(),
+              environment: props.environment
+            })
+          }
+        }
+      ],
+      passthroughBehavior: apigateway.PassthroughBehavior.NEVER,
+      requestTemplates: {
+        'application/json': JSON.stringify({ statusCode: 200 })
+      }
+    }), {
+      methodResponses: [
+        {
+          statusCode: '200',
+          responseModels: {
+            'application/json': apigateway.Model.EMPTY_MODEL
+          }
+        }
+      ]
+    });
+
     // Health check endpoint (no authorization required)
     const healthResource = this.api.root.addResource('health');
     healthResource.addMethod('GET', new apigateway.MockIntegration({
@@ -249,8 +395,50 @@ export class ApiGatewayConstruct extends Construct {
     // Grant API Gateway permission to invoke the SMS handler Lambda
     props.smsHandlerFunction.addPermission('ApiGatewayInvoke', {
       principal: new iam.ServicePrincipal('apigateway.amazonaws.com'),
-      sourceArn: this.api.arnForExecuteApi('*', '/webhook/sms', 'POST')
+      sourceArn: this.api.arnForExecuteApi('*', '/dev/webhooks/telnyx/sms', 'POST')
     });
+
+    // Grant API Gateway permission to invoke the fallback Lambda
+    this.fallbackFunction.addPermission('ApiGatewayInvokeFallback', {
+      principal: new iam.ServicePrincipal('apigateway.amazonaws.com'),
+      sourceArn: this.api.arnForExecuteApi('*', '/dev/webhooks/telnyx/fallback', 'POST')
+    });
+
+    // ===========================================
+    // CUSTOM DOMAIN (Optional)
+    // ===========================================
+
+    if (props.customDomain) {
+      // Create custom domain
+      this.customDomain = new apigateway.DomainName(this, 'CustomDomain', {
+        domainName: props.customDomain.domainName,
+        certificate: acm.Certificate.fromCertificateArn(
+          this, 
+          'Certificate', 
+          props.customDomain.certificateArn
+        ),
+        endpointType: apigateway.EndpointType.REGIONAL,
+        securityPolicy: apigateway.SecurityPolicy.TLS_1_2
+      });
+
+      // Apply networking service tags
+      props.tagging.applyTags(this.customDomain, SERVICES.NETWORK, 'custom-domain');
+
+      // Create base path mapping
+      new apigateway.BasePathMapping(this, 'BasePathMapping', {
+        domainName: this.customDomain,
+        restApi: this.api,
+        stage: this.api.deploymentStage
+      });
+
+      // Set webhook URL to use custom domain with full path
+      this.webhookUrl = `https://${props.customDomain.domainName}/dev/webhooks/telnyx/sms`;
+      this.fallbackUrl = `https://${props.customDomain.domainName}/dev/webhooks/telnyx/fallback`;
+    } else {
+      // Use default API Gateway URL with full path
+      this.webhookUrl = `${this.api.url}dev/webhooks/telnyx/sms`;
+      this.fallbackUrl = `${this.api.url}dev/webhooks/telnyx/fallback`;
+    }
   }
 
   // ===========================================
