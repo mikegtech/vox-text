@@ -182,12 +182,12 @@ export class InfrastructureStack extends cdk.Stack {
     // LAMBDA FUNCTIONS (Phase 5)
     // ===========================================
 
-    // Main SMS processing Lambda
+    // Main SMS processing Lambda with signature validation
     const smsHandlerFunction = new lambda.Function(this, 'BotSmsHandler', {
       functionName: this.naming.lambdaFunction(SERVICES.MESSAGING, 'sms-handler'),
-      runtime: lambda.Runtime.PYTHON_3_9,
+      runtime: lambda.Runtime.PYTHON_3_12,
       handler: 'index.lambda_handler',
-      code: lambda.Code.fromInline(this.getLambdaCode()),
+      code: this.getSmsHandlerCode(),
       role: lambdaExecutionRole,
       timeout: cdk.Duration.seconds(this.config.lambdaConfig.timeout),
       memorySize: this.config.lambdaConfig.memorySize,
@@ -195,6 +195,7 @@ export class InfrastructureStack extends cdk.Stack {
       environment: {
         'CONVERSATIONS_TABLE': conversationsTable.tableName,
         'ANALYTICS_TABLE': analyticsTable.tableName,
+        'TELNYX_PUBLIC_KEY_SECRET': `smsbot/${this.config.environment}/telnyx-public-key`,
         'ENVIRONMENT': this.config.environment
       },
       // Let Lambda create its own log group to avoid conflicts
@@ -217,6 +218,18 @@ export class InfrastructureStack extends cdk.Stack {
       effect: iam.Effect.ALLOW,
       actions: ['sns:Publish'],
       resources: ['*'] // For SMS publishing
+    }));
+
+    // Grant Lambda permissions to access Secrets Manager for Telnyx public key
+    lambdaExecutionRole.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: [
+        'secretsmanager:GetSecretValue',
+        'secretsmanager:DescribeSecret'
+      ],
+      resources: [
+        `arn:aws:secretsmanager:${this.region}:${this.account}:secret:smsbot/${this.config.environment}/telnyx-public-key*`
+      ]
     }));
 
     // Subscribe Lambda to inbound SMS topic
@@ -580,5 +593,27 @@ def process_sms_message(phone_number, message_body, sns, conversations_table, an
     
     print(f"Processed message from {phone_number} via {source}")
     `;
+  }
+
+  /**
+   * Get SMS handler code from packaged deployment or fallback to inline
+   */
+  private getSmsHandlerCode(): lambda.Code {
+    const packagePath = `lambda-packages/sms-handler-deployment.zip`;
+    const assetPath = `lambda/sms-handler`;
+    
+    // Check if packaged deployment exists
+    const fs = require('fs');
+    if (fs.existsSync(packagePath)) {
+      console.log(`Using packaged SMS handler deployment: ${packagePath}`);
+      return lambda.Code.fromAsset(packagePath);
+    } else if (fs.existsSync(assetPath)) {
+      console.log(`Using SMS handler source code: ${assetPath}`);
+      console.log(`Warning: Dependencies may not be available. Run: ./scripts/package-lambda.sh sms-handler`);
+      return lambda.Code.fromAsset(assetPath);
+    } else {
+      console.log(`Using inline SMS handler code (fallback)`);
+      return lambda.Code.fromInline(this.getLambdaCode());
+    }
   }
 }

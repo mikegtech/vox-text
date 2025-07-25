@@ -1,3 +1,7 @@
+# ===========================================
+# NODE.JS AND NPM
+# ===========================================
+
 # Logs
 logs
 *.log
@@ -9,24 +13,70 @@ dev-debug.log
 # Dependency directories
 node_modules/
 
-# Environment variables
-.env
-.env.*
+# npm
+package-lock.json
 
-# Editor directories and files
-.idea
-.vscode
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+# yarn
+yarn.lock
 
-# OS specific
-.DS_Store
-.DS_Store?
-._*
-Thumbs.db
+# pnpm
+pnpm-lock.yaml
+
+# bun
+bun.lockb
+
+# ===========================================
+# PYTHON AND LAMBDA PACKAGING
+# ===========================================
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
+# Lambda packaging artifacts
+infrastructure/lambda-packages/
+infrastructure/lambda-layers/
+infrastructure/temp_requirements.txt
+infrastructure/response.json
+
+# uv package manager
+.uv/
+uv.lock
+
+# pip
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Python build artifacts
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ===========================================
+# AWS AND INFRASTRUCTURE
+# ===========================================
 
 # Infrastructure specific
 infrastructure/cdk.out/
@@ -41,6 +91,65 @@ aws-credentials*
 *.pem
 *.key
 
+# AWS SSO cache
+.aws-sso-cache/
+
+# CloudFormation templates
+*.template.json
+*.template.yaml
+template.yml
+template.yaml
+
+# Deployment artifacts
+deployment-*.log
+
+# Terraform (if used)
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# ===========================================
+# ENVIRONMENT AND SECRETS
+# ===========================================
+
+# Environment variables
+.env
+.env.*
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# ===========================================
+# EDITOR AND OS
+# ===========================================
+
+# Editor directories and files
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.swp
+*.swo
+*~
+
+# OS specific
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+
+# ===========================================
+# BUILD AND TEMPORARY FILES
+# ===========================================
+
 # Build artifacts
 dist/
 build/
@@ -51,8 +160,97 @@ out/
 *.temp
 .tmp/
 .temp/
+tmp/
+temp/
 
 # Backup files
 *.bak
 *.backup
 *.old
+
+# Cache directories
+.cache/
+.parcel-cache/
+.next/
+.nuxt/
+
+# ===========================================
+# TESTING AND COVERAGE
+# ===========================================
+
+# Test artifacts
+test-results/
+test-reports/
+coverage/
+*.lcov
+.nyc_output/
+.coverage
+.coverage.*
+.pytest_cache/
+htmlcov/
+.tox/
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# ===========================================
+# DOCUMENTATION
+# ===========================================
+
+# Documentation build
+docs/_build/
+site/
+
+# ===========================================
+# LANGUAGE-SPECIFIC
+# ===========================================
+
+# TypeScript
+*.tsbuildinfo
+
+# Java
+*.class
+*.jar
+*.war
+*.ear
+target/
+
+# C#
+bin/
+obj/
+*.user
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.dylib
+*.test
+vendor/
+
+# Rust
+Cargo.lock
+
+# ===========================================
+# MISC
+# ===========================================
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Yarn Integrity file
+.yarn-integrity
+
+# Local development files
+local/
+.local/

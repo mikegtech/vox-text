@@ -68,12 +68,13 @@ export class ApiGatewayConstruct extends Construct {
       ]
     }));
 
-    // Lambda Authorizer for Ed25519 signature validation
+    // Lambda Authorizer for EdDSA signature validation (Python 3.12)
+    // Using properly packaged deployment with uv dependencies
     this.authorizerFunction = new lambda.Function(this, 'TelnyxAuthorizer', {
       functionName: props.naming.lambdaFunction(SERVICES.SECURITY, 'telnyx-authorizer'),
-      runtime: lambda.Runtime.PYTHON_3_9,
+      runtime: lambda.Runtime.PYTHON_3_12,
       handler: 'index.lambda_handler',
-      code: lambda.Code.fromAsset('lambda/telnyx-authorizer'),
+      code: this.getLambdaCode('telnyx-authorizer'),
       role: authorizerRole,
       timeout: cdk.Duration.seconds(10),
       memorySize: 256,
@@ -87,7 +88,7 @@ export class ApiGatewayConstruct extends Construct {
 
     // Apply security service tags
     props.tagging.applyTags(this.authorizerFunction, SERVICES.SECURITY, 'telnyx-authorizer', {
-      Runtime: 'python3.9',
+      Runtime: 'python3.12',
       MemorySize: '256MB',
       Timeout: '10s'
     });
@@ -123,12 +124,12 @@ export class ApiGatewayConstruct extends Construct {
     // Apply messaging service tags to fallback role
     props.tagging.applyTags(fallbackRole, SERVICES.MESSAGING, 'fallback-handler-role');
 
-    // Fallback Lambda function
+    // Fallback Lambda function with proper packaging
     this.fallbackFunction = new lambda.Function(this, 'TelnyxFallback', {
       functionName: props.naming.lambdaFunction(SERVICES.MESSAGING, 'telnyx-fallback'),
-      runtime: lambda.Runtime.PYTHON_3_9,
+      runtime: lambda.Runtime.PYTHON_3_12,
       handler: 'index.lambda_handler',
-      code: lambda.Code.fromAsset('lambda/telnyx-fallback'),
+      code: this.getLambdaCode('telnyx-fallback'),
       role: fallbackRole,
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
@@ -143,7 +144,7 @@ export class ApiGatewayConstruct extends Construct {
 
     // Apply messaging service tags to fallback function
     props.tagging.applyTags(this.fallbackFunction, SERVICES.MESSAGING, 'telnyx-fallback', {
-      Runtime: 'python3.9',
+      Runtime: 'python3.12',
       MemorySize: '256MB',
       Timeout: '30s'
     });
@@ -594,5 +595,24 @@ def generate_policy(principal_id, effect, resource):
         }
     }
     `;
+  }
+
+  /**
+   * Get Lambda code from packaged deployment or fallback to asset
+   */
+  private getLambdaCode(functionName: string): lambda.Code {
+    const packagePath = `lambda-packages/${functionName}-deployment.zip`;
+    const assetPath = `lambda/${functionName}`;
+    
+    // Check if packaged deployment exists
+    const fs = require('fs');
+    if (fs.existsSync(packagePath)) {
+      console.log(`Using packaged deployment for ${functionName}: ${packagePath}`);
+      return lambda.Code.fromAsset(packagePath);
+    } else {
+      console.log(`Using source code for ${functionName}: ${assetPath}`);
+      console.log(`Warning: Dependencies may not be available. Run: ./scripts/package-lambda.sh ${functionName}`);
+      return lambda.Code.fromAsset(assetPath);
+    }
   }
 }
