@@ -1,0 +1,39 @@
+{
+  "name": "@your-company/aws-cdk-standards",
+  "version": "1.0.0",
+  "description": "Shared AWS CDK naming and tagging standards for TypeScript",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "test": "jest",
+    "prepublishOnly": "npm run build"
+  },
+  "peerDependencies": {
+    "aws-cdk-lib": "^2.0.0",
+    "constructs": "^10.0.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "@types/node": "^18.0.0",
+    "aws-cdk-lib": "^2.0.0",
+    "constructs": "^10.0.0",
+    "jest": "^29.5.0",
+    "typescript": "^5.0.0"
+  },
+  "keywords": [
+    "aws",
+    "cdk",
+    "standards",
+    "naming",
+    "tagging",
+    "typescript"
+  ],
+  "author": "Your Company",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-company/aws-cdk-standards.git"
+  }
+}

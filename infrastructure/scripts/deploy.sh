@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# SMS Bot Infrastructure Deployment Script
+# SMS Bot Infrastructure Deployment Script (Python CDK)
 # Usage: ./scripts/deploy.sh [environment] [company] [tenant] [aws-profile]
 
 set -e
@@ -66,29 +66,32 @@ echo -e "AWS Account: ${GREEN}$AWS_ACCOUNT${NC}"
 echo -e "AWS Region: ${GREEN}$AWS_REGION${NC}"
 echo ""
 
+# Set up environment variables for CDK
+export CDK_DEFAULT_ACCOUNT=$AWS_ACCOUNT
+export CDK_DEFAULT_REGION=$AWS_REGION
+export AWS_DEFAULT_REGION=$AWS_REGION
+
 # Change to infrastructure directory
 cd "$(dirname "$0")/.."
 
-# Install dependencies if needed
-if [ ! -d "node_modules" ]; then
-    echo -e "${YELLOW}📦 Installing dependencies...${NC}"
-    npm install
+# Check if m3_aws_standards is installed
+echo -e "${YELLOW}📦 Checking dependencies...${NC}"
+if ! python3 -c "import m3_aws_standards" 2>/dev/null; then
+    echo -e "${YELLOW}Installing m3_aws_standards package...${NC}"
+    ~/.local/bin/pip install -e ./shared-standards
 fi
 
-# Build TypeScript
-echo -e "${YELLOW}🔨 Building TypeScript...${NC}"
-npm run build
-
-# Validate naming convention
-echo -e "${YELLOW}🔍 Validating naming convention...${NC}"
-if [ -f "scripts/validate-naming.ts" ]; then
-    npx ts-node scripts/validate-naming.ts
+# Validate structure
+echo -e "${YELLOW}🔍 Validating infrastructure structure...${NC}"
+if ! python3 test_structure.py; then
+    echo -e "${RED}❌ Structure validation failed${NC}"
+    exit 1
 fi
 
 # Bootstrap CDK if needed (only for first deployment)
 if [ "$ENVIRONMENT" = "dev" ] || [ ! -f ".cdk-bootstrapped-$AWS_PROFILE" ]; then
     echo -e "${YELLOW}🥾 Bootstrapping CDK for profile $AWS_PROFILE...${NC}"
-    npx cdk bootstrap \
+    cdk bootstrap \
         --profile $AWS_PROFILE \
         --context environment=$ENVIRONMENT \
         --context company=$COMPANY \
@@ -98,20 +101,19 @@ fi
 
 # Synthesize CloudFormation template
 echo -e "${YELLOW}🏗️  Synthesizing CloudFormation template...${NC}"
-npx cdk synth \
-    --profile $AWS_PROFILE \
+python3 app.py \
     --context environment=$ENVIRONMENT \
     --context company=$COMPANY \
     ${TENANT:+--context tenant=$TENANT}
 
 # Show diff if stack exists
 echo -e "${YELLOW}📊 Checking for changes...${NC}"
-if npx cdk diff \
+if cdk diff \
     --profile $AWS_PROFILE \
     --context environment=$ENVIRONMENT \
     --context company=$COMPANY \
     ${TENANT:+--context tenant=$TENANT} > /dev/null 2>&1; then
-    npx cdk diff \
+    cdk diff \
         --profile $AWS_PROFILE \
         --context environment=$ENVIRONMENT \
         --context company=$COMPANY \
@@ -133,7 +135,7 @@ fi
 
 # Deploy the stack
 echo -e "${YELLOW}🚀 Deploying infrastructure...${NC}"
-npx cdk deploy \
+cdk deploy \
     --profile $AWS_PROFILE \
     --context environment=$ENVIRONMENT \
     --context company=$COMPANY \
@@ -166,7 +168,7 @@ if [ $? -eq 0 ]; then
     
     echo -e "${BLUE}🔗 Useful Links:${NC}"
     echo -e "AWS Console: https://console.aws.amazon.com/"
-    echo -e "CloudWatch Dashboard: https://console.aws.amazon.com/cloudwatch/home?region=$AWS_REGION#dashboards:name=smsbot-$ENVIRONMENT-operations"
+    echo -e "CloudWatch Dashboard: https://console.aws.amazon.com/cloudwatch/home?region=$AWS_REGION#dashboards:name=smsbot-$ENVIRONMENT-monitoring-dashboard-operations"
     
 else
     echo -e "${RED}❌ Deployment failed!${NC}"

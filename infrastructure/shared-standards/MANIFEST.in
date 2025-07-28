@@ -1,0 +1,11 @@
+# Include additional files in the package
+include README.md
+include LICENSE
+include CHANGELOG.md
+include pyproject.toml
+recursive-include m3_aws_standards *.py
+recursive-include m3_aws_standards py.typed
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co]
+recursive-exclude tests *
+recursive-exclude examples *

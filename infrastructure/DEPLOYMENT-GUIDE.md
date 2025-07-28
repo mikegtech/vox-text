@@ -1,33 +1,52 @@
 # SMS Bot Infrastructure - Deployment Guide
 
-## 🎉 Project Status: Ready for Deployment
+## 🎉 Project Status: Ready for Deployment with Python CDK
 
-The SMS Bot CDK infrastructure project has been successfully created with comprehensive naming conventions and tagging standards. All components are validated and ready for deployment.
+The SMS Bot CDK infrastructure project has been successfully restructured with Python CDK, comprehensive naming conventions, and tagging standards using the `m3_aws_standards` shared library. All components are validated and ready for deployment.
 
 ## 📋 What We've Built
 
-### 1. **Complete Infrastructure Stack**
+### 1. **Complete Infrastructure Stack (Python CDK)**
 - ✅ IAM roles with least privilege access
-- ✅ SNS topics for SMS messaging
-- ✅ Lambda function for message processing
-- ✅ DynamoDB tables for data storage
-- ✅ CloudWatch monitoring and dashboards
+- ✅ SNS topics for SMS messaging with delivery status logging
+- ✅ Lambda function for message processing (Python 3.11)
+- ✅ DynamoDB tables for conversation and analytics storage
+- ✅ **Public API Gateway** with HTTP/REST endpoints (for Traefik routing)
+- ✅ **Lambda Authorizer** for webhook signature validation
+- ✅ **Fallback Lambda** for error handling and dead letter queue
+- ✅ **ECS Fargate service** for containerized webhook handling
+- ✅ **Service Discovery** for internal communication
+- ✅ **AWS Secrets Manager** for secure configuration storage
+- ✅ CloudWatch monitoring, dashboards, and alarms
+- ✅ **Customer-managed KMS encryption** for all services
+- ✅ Environment-specific configurations (dev/staging/prod)
+- ✅ **Hybrid architecture** supporting both serverless and containerized workloads
 
-### 2. **Standardized Naming Convention**
+### 2. **Standardized Naming Convention (m3_aws_standards)**
 - ✅ Pattern: `{project}-{environment}-{service}-{resource-type}-{identifier}`
-- ✅ Examples: `smsbot-prod-messaging-sms-handler`, `smsbot-dev-conversations`
-- ✅ Validation script to ensure consistency
+- ✅ Examples: 
+  - `smsbot-prod-messaging-lambda-sms-handler`
+  - `smsbot-dev-storage-table-conversations`
+  - `smsbot-staging-monitoring-dashboard-operations`
+- ✅ Automated validation and consistency checks
 
-### 3. **Comprehensive Tagging Strategy**
-- ✅ 10 mandatory tags including Company, Tenant, OffHoursShutdown
-- ✅ Environment-specific tagging
-- ✅ Cost optimization through off-hours shutdown tags
-- ✅ Multi-tenant support
+### 3. **Comprehensive Tagging Strategy (13+ Tags)**
+- ✅ **Mandatory Tags**: Project, Environment, Company, Service, CreatedBy, ManagedBy
+- ✅ **Cost Optimization**: CostCenter, OffHoursShutdown, BackupEnabled
+- ✅ **Governance**: Owner, MonitoringLevel, DataRetention, ResourceType
+- ✅ **Service-Specific**: MessageRetention for messaging resources
+- ✅ Multi-tenant support with tenant-specific tagging
 
 ### 4. **Environment Configuration**
-- ✅ Development: Cost-optimized with off-hours shutdown
-- ✅ Staging: Balanced configuration for testing
-- ✅ Production: High-availability with data protection
+- ✅ **Development**: Cost-optimized, 7-day retention, off-hours shutdown enabled
+- ✅ **Staging**: Balanced configuration, 14-day retention, monitoring enabled
+- ✅ **Production**: High-availability, 90-day retention, deletion protection
+
+### 5. **Modern Python Structure**
+- ✅ Clean `app.py` entry point (no more confusing `bin/` folder)
+- ✅ Organized `stacks/` directory with focused modules
+- ✅ Shared `m3_aws_standards` package with `pyproject.toml`
+- ✅ Environment-specific configurations in `config/`
 
 ## 🚀 Quick Deployment with AWS SSO
 
@@ -38,206 +57,340 @@ cd infrastructure
 # Login to AWS SSO (if session expired)
 aws sso login --profile boss
 
-# Set up environment variables
+# Set up environment variables (same as before)
 source ./scripts/setup-aws-env.sh boss
 ```
 
 ### Deploy to Development
 ```bash
-# Quick deployment with boss profile
+# Quick deployment with boss profile (same interface as before)
 ./deploy-with-boss.sh dev your-company
 
-# Or with custom tenant
-./deploy-with-boss.sh dev your-company dev-client
+# Or use the main deployment script
+./scripts/deploy.sh dev your-company
+
+# With custom tenant
+./scripts/deploy.sh dev your-company dev-client boss
 ```
 
 ### Deploy to Production
 ```bash
 # Production deployment (requires confirmation)
-./deploy-with-boss.sh prod your-company prod-client
+./scripts/deploy.sh prod your-company prod-client boss
 ```
 
-## 📊 Resource Overview
+## 🗑️ Stack Destruction (For Redeployment)
+
+### Destroy Current Stack
+```bash
+# Destroy development stack
+./scripts/destroy.sh dev your-company
+
+# Destroy with confirmation for production
+./scripts/destroy.sh prod your-company prod-client boss
+```
+
+### Complete Redeployment Workflow
+```bash
+# 1. Destroy existing stack
+./scripts/destroy.sh dev your-company
+
+# 2. Wait for destruction to complete (check AWS Console)
+
+# 3. Deploy new stack with updated structure
+./scripts/deploy.sh dev your-company
+```
+
+## 📊 Resource Overview (Updated Names)
 
 ### Development Environment Resources
 ```
-smsbot-dev-infrastructure (Stack)
-├── smsbot-dev-messaging-role-sns-logs (IAM Role)
-├── smsbot-dev-compute-role-lambda-execution (IAM Role)
-├── smsbot-dev-conversations (DynamoDB Table)
-├── smsbot-dev-analytics (DynamoDB Table)
-├── smsbot-dev-inbound-sms (SNS Topic)
-├── smsbot-dev-delivery-status (SNS Topic)
-├── smsbot-dev-messaging-sms-handler (Lambda Function)
-└── smsbot-dev-operations (CloudWatch Dashboard)
+SMSBotStack (Stack Name)
+├── smsbot-dev-security-role-sns-logging (IAM Role)
+├── smsbot-dev-security-role-lambda-execution (IAM Role)
+├── smsbot-dev-security-role-api-authorizer (IAM Role)
+├── smsbot-dev-compute-role-api-fallback (IAM Role)
+├── smsbot-dev-security-role-ecs-execution (IAM Role)
+├── smsbot-dev-security-role-ecs-task (IAM Role)
+├── smsbot-dev-storage-table-conversations (DynamoDB Table)
+├── smsbot-dev-storage-table-analytics (DynamoDB Table)
+├── smsbot-dev-messaging-topic-inbound-sms (SNS Topic)
+├── smsbot-dev-messaging-topic-delivery-status (SNS Topic)
+├── smsbot-dev-messaging-lambda-sms-handler (Lambda Function)
+├── smsbot-dev-security-lambda-api-authorizer (Lambda Function)
+├── smsbot-dev-compute-lambda-api-fallback (Lambda Function)
+├── smsbot-dev-network-api-telnyx-webhooks (API Gateway - Public)
+├── smsbot-dev-compute-cluster-smsbot (ECS Cluster)
+├── smsbot-dev-compute-service-smsbot (ECS Service)
+├── smsbot-dev-compute-task-smsbot (ECS Task Definition)
+├── smsbot-dev-network-sg-ecs-tasks (Security Group)
+├── smsbot-dev-security-secret-telnyx (Secrets Manager)
+├── smsbot-dev-security-secret-app-config (Secrets Manager)
+├── smsbot-dev-security-key-smsbot (KMS Key)
+├── smsbot-dev-security-key-sns (KMS Key)
+├── smsbot-dev-security-key-dynamodb (KMS Key)
+├── smsbot-dev-security-key-logs (KMS Key)
+├── smsbot-dev-messaging-logs-sns (CloudWatch Log Group)
+├── smsbot-dev-ecs-logs-smsbot (CloudWatch Log Group)
+└── smsbot-dev-monitoring-dashboard-operations (CloudWatch Dashboard)
 ```
 
 ### Mandatory Tags Applied to All Resources
 ```json
 {
-  "Project": "SMSBot",
-  "Company": "your-company",
-  "Tenant": "dev-tenant",
+  "Project": "smsbot",
   "Environment": "dev",
+  "Company": "your-company",
   "Service": "messaging|compute|storage|monitoring|security",
-  "Owner": "infrastructure-team",
-  "CostCenter": "engineering-dev",
   "CreatedBy": "cdk",
   "ManagedBy": "infrastructure-team",
-  "OffHoursShutdown": "enabled|disabled"
+  "CostCenter": "engineering-dev",
+  "OffHoursShutdown": "enabled|disabled",
+  "BackupEnabled": "false|true",
+  "MonitoringLevel": "basic|comprehensive",
+  "DataRetention": "7-days|14-days|90-days",
+  "ResourceType": "messaging|compute|storage",
+  "MessageRetention": "7-days|14-days"
 }
 ```
 
 ## 💰 Cost Optimization Features
 
-### Development Environment (60-80% Savings)
-- **Lambda Functions**: `OffHoursShutdown: enabled`
+### Development Environment (70-80% Savings)
+- **Lambda Functions**: `OffHoursShutdown: enabled`, 256MB memory
+- **ECS Fargate**: 0.25 vCPU, 0.5GB memory (minimal for dev)
 - **Log Retention**: 7 days (vs 90 days in prod)
-- **Memory Allocation**: 256MB (vs 1024MB in prod)
-- **No Reserved Concurrency**: Pay only for actual usage
+- **DynamoDB**: Pay-per-request, no point-in-time recovery
+- **API Gateway**: Public regional (usage-based pricing)
+- **Monitoring**: Basic level, no detailed monitoring
 
 ### Production Environment (Always-On)
-- **All Services**: `OffHoursShutdown: disabled`
-- **Data Protection**: Deletion protection enabled
-- **Backup**: Point-in-time recovery enabled
-- **Monitoring**: Detailed monitoring and alerting
+- **All Services**: `OffHoursShutdown: disabled`, optimized sizing
+- **ECS Fargate**: 0.5 vCPU, 1GB memory with 2 tasks for HA
+- **Data Protection**: Deletion protection enabled, point-in-time recovery
+- **Backup**: `BackupEnabled: true` for all storage resources
+- **API Gateway**: Public regional with comprehensive logging
+- **Monitoring**: Comprehensive with alarms and detailed metrics
 
-## 🔧 Available Commands
+## 🔧 Available Commands (Same Interface)
 
 ### Validation and Testing
 ```bash
-# Validate naming and tagging
-npx ts-node scripts/validate-naming.ts
+# Validate new Python structure
+python3 test_structure.py
 
-# Build and test
-npm run build
-npm run test
+# Validate m3_aws_standards package
+python3 -c "from m3_aws_standards import NamingConvention; print('✅ Package working')"
 
-# Synthesize CloudFormation
-npx cdk synth --context environment=dev
+# Synthesize CloudFormation (Python CDK)
+python3 app.py --context environment=dev --context company=your-company
 ```
 
-### Deployment Options
+### Deployment Options (Unchanged Interface)
 ```bash
-# Deploy with default settings
+# Deploy with default settings (same as before)
 ./scripts/deploy.sh dev
 
-# Deploy with custom company and tenant
-./scripts/deploy.sh prod acme-corp client-a
+# Deploy with custom company and tenant (same as before)
+./scripts/deploy.sh prod acme-corp client-a boss
 
-# Manual CDK deployment
-npx cdk deploy --context environment=prod --context company=acme-corp
+# Quick deployment with boss profile (same as before)
+./deploy-with-boss.sh dev your-company
 ```
 
-## 📁 Project Structure
+### Stack Management
+```bash
+# Destroy stack for redeployment
+./scripts/destroy.sh dev your-company
+
+# Show differences before deployment
+cdk diff --context environment=dev --context company=your-company
+```
+
+## 📁 Updated Project Structure
 
 ```
 infrastructure/
-├── bin/infrastructure.ts          # CDK app entry point
-├── lib/
-│   ├── infrastructure-stack.ts    # Main infrastructure stack
-│   ├── naming-convention.ts       # Naming utility (validated ✅)
-│   └── tagging-strategy.ts        # Tagging utility (validated ✅)
-├── config/environments.ts         # Environment configs (validated ✅)
-├── docs/
-│   ├── naming-convention.md       # Naming standards
-│   └── tagging-standards.md       # Tagging documentation
-├── scripts/
-│   ├── deploy.sh                  # Deployment script
-│   └── validate-naming.ts         # Validation script (passing ✅)
-└── README.md                      # Comprehensive documentation
+├── app.py                          # 🚀 Main CDK entry point (was bin/infrastructure.ts)
+├── deploy.py                       # 🔧 Python deployment script
+├── deploy-python.sh                # 🔧 Bash wrapper for deployment
+├── deploy-with-boss.sh             # 🔧 Quick deployment (unchanged interface)
+├── test_structure.py               # ✅ Structure validation
+│
+├── stacks/                         # 📦 CDK Stacks (was lib/)
+│   ├── __init__.py
+│   └── sms_bot_stack.py           # SMS Bot infrastructure (was infrastructure-stack.ts)
+│
+├── config/                         # ⚙️ Configuration (converted to Python)
+│   ├── __init__.py
+│   └── environments.py            # Environment configs (was environments.ts)
+│
+├── shared-standards/               # 📚 m3_aws_standards Package
+│   ├── m3_aws_standards/
+│   │   ├── __init__.py
+│   │   ├── naming.py              # Naming conventions
+│   │   ├── tagging.py             # Tagging strategies
+│   │   ├── constructs.py          # Standardized CDK constructs
+│   │   └── py.typed               # Type checking support
+│   ├── pyproject.toml             # Modern Python packaging (not setup.py)
+│   └── README.md
+│
+├── scripts/                        # 🔧 Utility Scripts (updated)
+│   ├── setup-aws-env.sh           # AWS environment setup (unchanged)
+│   ├── deploy.sh                  # Main deployment script (updated for Python)
+│   └── destroy.sh                 # Stack destruction script (new)
+│
+└── lambda/                         # 🔧 Lambda function code (unchanged)
+    └── (your existing lambda code)
 ```
 
 ## ✅ Validation Results
 
-### Naming Convention ✅
+### Python Structure ✅
+```bash
+$ python3 test_structure.py
+✅ m3_aws_standards import successful
+✅ config.environments import successful
+✅ stacks.sms_bot_stack import successful
+✅ Environment configuration working
+✅ Naming convention working
+✅ Tagging strategy working
+🎉 All structure tests passed!
+```
+
+### m3_aws_standards Package ✅
 - All resource names follow standard pattern
 - Environment-specific naming validated
-- No naming conflicts detected
-
-### Tagging Strategy ✅
-- All mandatory tags implemented
-- Environment-specific tagging working
-- Cost optimization tags applied correctly
+- 13+ comprehensive tags applied automatically
+- Modern `pyproject.toml` packaging
 
 ### CDK Synthesis ✅
-- CloudFormation template generates successfully
-- All resources properly configured
-- No compilation errors
+- Python CDK app synthesizes successfully
+- All resources properly configured with m3_aws_standards
+- No compilation errors, clean CloudFormation output
 
-## 🎯 Next Steps
+## 🎯 Deployment Steps
 
-### 1. **Deploy to Development** (Recommended First Step)
+### 1. **Destroy Existing Stack** (If Redeploying)
 ```bash
 cd infrastructure
-./scripts/deploy.sh dev your-company
+
+# Set up AWS environment
+source ./scripts/setup-aws-env.sh boss
+
+# Destroy current stack
+./scripts/destroy.sh dev your-company
+
+# Wait for destruction to complete (check AWS Console)
 ```
 
-### 2. **Verify Resources**
-- Check AWS Console for proper resource names
-- Validate tags are applied correctly
-- Test Lambda function execution
-
-### 3. **Configure SNS SMS**
-Following the [PRD requirements](../.taskmaster/docs/aws-account-prep-prd.md):
-- Set SMS spend limits in SNS console
-- Configure delivery status logging
-- Test SMS sending functionality
-
-### 4. **Set Up Monitoring**
-- Access CloudWatch dashboard: `smsbot-dev-operations`
-- Configure billing alerts
-- Set up operational alarms
-
-### 5. **Deploy to Higher Environments**
+### 2. **Deploy New Stack with Updated Structure**
 ```bash
-# After dev validation
-./scripts/deploy.sh staging your-company
-./scripts/deploy.sh prod your-company
+# Deploy with new Python structure
+./scripts/deploy.sh dev your-company
+
+# Or use the quick deployment script (same interface)
+./deploy-with-boss.sh dev your-company
 ```
+
+### 3. **Verify New Resources**
+Check AWS Console for updated resource names:
+- Lambda: `smsbot-dev-messaging-lambda-sms-handler`
+- DynamoDB: `smsbot-dev-storage-table-conversations`
+- SNS: `smsbot-dev-messaging-topic-inbound-sms`
+- Dashboard: `smsbot-dev-monitoring-dashboard-operations`
+
+### 4. **Validate Tags**
+All resources should have 13+ tags including:
+- `Project: smsbot`
+- `Environment: dev`
+- `Company: your-company`
+- `Service: messaging|storage|compute|monitoring|security`
+- `CreatedBy: cdk`
+- `ManagedBy: infrastructure-team`
+- And 7+ additional governance/cost tags
 
 ## 🔍 Monitoring and Operations
 
-### CloudWatch Dashboard
+### CloudWatch Dashboard (Updated Names)
 Access your environment dashboard:
-- **Dev**: `smsbot-dev-operations`
-- **Staging**: `smsbot-staging-operations`
-- **Prod**: `smsbot-prod-operations`
+- **Dev**: `smsbot-dev-monitoring-dashboard-operations`
+- **Staging**: `smsbot-staging-monitoring-dashboard-operations`
+- **Prod**: `smsbot-prod-monitoring-dashboard-operations`
 
 ### Key Metrics to Monitor
-- SMS messages published (SNS)
-- Lambda invocations and errors
-- Lambda duration and memory usage
-- DynamoDB read/write capacity
+- SMS messages published (SNS topics)
+- Lambda invocations, errors, and duration
+- Lambda memory usage and reserved concurrency
+- DynamoDB read/write capacity and throttling
+- CloudWatch log ingestion and retention
 
-### Cost Tracking
-Resources are tagged for cost allocation by:
-- Environment (dev/staging/prod)
-- Company and Tenant
-- Service type
-- Off-hours shutdown eligibility
+### Cost Tracking (Enhanced)
+Resources are tagged for detailed cost allocation by:
+- **Environment**: dev/staging/prod
+- **Company and Tenant**: Multi-tenant cost tracking
+- **Service Type**: messaging/compute/storage/monitoring/security
+- **Off-hours Shutdown**: Automated cost optimization
+- **Cost Center**: engineering-{environment}
 
 ## 🆘 Troubleshooting
 
 ### Common Issues
-1. **AWS Credentials**: Ensure AWS CLI is configured
-2. **CDK Bootstrap**: Run `npx cdk bootstrap` for first deployment
-3. **Permissions**: Verify IAM permissions for CDK deployment
-4. **Resource Conflicts**: Check for existing resources with same names
+1. **AWS Credentials**: Ensure `source ./scripts/setup-aws-env.sh boss`
+2. **Python Dependencies**: Run `pip install -e ./shared-standards`
+3. **CDK Bootstrap**: Run `cdk bootstrap` for first deployment
+4. **Resource Conflicts**: Use `./scripts/destroy.sh` to clean up
+
+### Structure Validation
+```bash
+# Test the new structure
+python3 test_structure.py
+
+# Test m3_aws_standards import
+python3 -c "from m3_aws_standards import NamingConvention; print('✅ Working')"
+
+# Test environment configuration
+python3 -c "from config.environments import get_environment_config; print('✅ Working')"
+```
 
 ### Getting Help
-1. Run validation script: `npx ts-node scripts/validate-naming.ts`
-2. Check CDK synthesis: `npx cdk synth --context environment=dev`
+1. Run structure validation: `python3 test_structure.py`
+2. Check CDK synthesis: `python3 app.py --context environment=dev`
 3. Review deployment logs in CloudFormation console
 4. Contact infrastructure team for support
 
 ## 📚 Documentation References
 
 - [SMS Bot PRD](../.taskmaster/docs/aws-account-prep-prd.md) - Original requirements
-- [Naming Convention Guide](docs/naming-convention.md) - Detailed naming standards
-- [Tagging Standards](docs/tagging-standards.md) - Complete tagging documentation
+- [New Structure Guide](NEW-STRUCTURE-GUIDE.md) - Detailed migration information
+- [m3_aws_standards README](shared-standards/README.md) - Package documentation
 - [Infrastructure README](README.md) - Technical implementation details
+
+## 🔄 Migration Summary
+
+### What Changed
+- **Entry Point**: `bin/infrastructure.ts` → `app.py`
+- **Language**: TypeScript → Python CDK
+- **Structure**: `lib/` → `stacks/` directory
+- **Standards**: Embedded logic → `m3_aws_standards` package
+- **Packaging**: No packaging → Modern `pyproject.toml`
+
+### What Stayed the Same
+- **Deployment Interface**: Same script names and arguments
+- **AWS Profile**: Still uses `boss` profile by default
+- **Environment Setup**: Same `setup-aws-env.sh` script
+- **Resource Functionality**: All features preserved
+- **Environment Configs**: Same dev/staging/prod settings
+
+### What Improved
+- **Cleaner Organization**: Logical separation of concerns
+- **Reusable Standards**: Shared library for all projects
+- **Better Naming**: Consistent, predictable resource names
+- **Comprehensive Tagging**: 13+ tags for governance and cost optimization
+- **Modern Python**: Type hints, proper packaging, maintainable code
 
 ---
 
-**🎉 Congratulations!** Your SMS Bot infrastructure is ready for deployment with enterprise-grade naming conventions, comprehensive tagging, and cost optimization features.
+**🎉 Your SMS Bot infrastructure is ready for redeployment with the new Python CDK structure, m3_aws_standards integration, and comprehensive tagging!**
+
+**Next Step**: Run `./scripts/destroy.sh dev your-company` followed by `./scripts/deploy.sh dev your-company` to migrate to the new structure.
